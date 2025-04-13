@@ -1,10 +1,23 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { getCardData, getOCGPrice } from '../utils/api';
 
 const CardTable = ({ deck, viewMode }) => {
     const [cards, setCards] = useState([]);
     const [loading, setLoading] = useState(true);
     const [sortConfig, setSortConfig] = useState({ key: 'type', direction: 'asc' });
+    const [isMobile, setIsMobile] = useState(window.innerWidth <= 768);
+
+    // Check for mobile on resize
+    useEffect(() => {
+        const handleResize = () => {
+            setIsMobile(window.innerWidth <= 768);
+        };
+
+        window.addEventListener('resize', handleResize);
+        return () => {
+            window.removeEventListener('resize', handleResize);
+        };
+    }, []);
 
     React.useEffect(() => {
         const loadCards = async () => {
@@ -88,6 +101,28 @@ const CardTable = ({ deck, viewMode }) => {
         });
     }, [cards, sortConfig]);
 
+    // Helper function to determine if a card is a monster
+    const isMonster = (cardType) => {
+        return cardType && (
+            cardType.includes('Monster') || 
+            cardType.includes('Fusion') || 
+            cardType.includes('Synchro') || 
+            cardType.includes('Xyz') || 
+            cardType.includes('Link') ||
+            cardType.includes('Pendulum')
+        );
+    };
+
+    // Helper function to display ATK/DEF values properly
+    const displayStatValue = (card, stat) => {
+        // For monster cards, show 0 as "0", not "-"
+        if (isMonster(card.type)) {
+            return card[stat] === 0 ? "0" : (card[stat] || "-");
+        }
+        // For non-monster cards (spells/traps), always show "-"
+        return "-";
+    };
+
     const totalTCGPrice = cards.reduce((sum, card) => sum + (card.tcgPrice * card.quantity), 0);
     const totalOCGPrice = cards.reduce((sum, card) => sum + (card.ocgPrice * card.quantity), 0);
 
@@ -95,7 +130,8 @@ const CardTable = ({ deck, viewMode }) => {
         return <div>Loading cards...</div>;
     }
 
-    if (viewMode === 'grid') {
+    // Always use grid view for mobile devices
+    if (viewMode === 'grid' || isMobile) {
         return (
             <div className="card-grid">
                 {sortedCards.map(card => (
@@ -106,12 +142,26 @@ const CardTable = ({ deck, viewMode }) => {
                         <img src={card.card_images[0].image_url} alt={card.name} />
                         <div className="card-info">
                             <h3>{card.name}</h3>
+                            <p>Type: {card.type}</p>
+                            {card.attribute && <p>Attribute: {card.attribute}</p>}
+                            {card.race && <p>Monster Type: {card.race}</p>}
+                            {(card.level || card.rank || card.linkval) && 
+                                <p>Level/Rank/Link: {card.level || card.rank || card.linkval}</p>
+                            }
+                            {isMonster(card.type) && (
+                                <p>ATK/DEF: {displayStatValue(card, 'atk')}/{displayStatValue(card, 'def')}</p>
+                            )}
                             <p>Quantity: {card.quantity}</p>
-                            <p>TCG Price: ${card.tcgPrice}</p>
-                            <p>OCG Price: ${card.ocgPrice}</p>
+                            <p>TCG Price: ${card.tcgPrice} (Total: ${(card.tcgPrice * card.quantity).toFixed(2)})</p>
+                            <p>OCG Price: ${card.ocgPrice} (Total: ${(card.ocgPrice * card.quantity).toFixed(2)})</p>
                         </div>
                     </div>
                 ))}
+                <div className="card-grid-totals">
+                    <h3>Totals</h3>
+                    <p>TCG Total: ${totalTCGPrice.toFixed(2)}</p>
+                    <p>OCG Total: ${totalOCGPrice.toFixed(2)}</p>
+                </div>
             </div>
         );
     }
@@ -149,8 +199,8 @@ const CardTable = ({ deck, viewMode }) => {
                             <td>{card.attribute || '-'}</td>
                             <td>{card.race || '-'}</td>
                             <td>{card.level || card.rank || card.linkval || '-'}</td>
-                            <td>{card.atk || '-'}</td>
-                            <td>{card.def || '-'}</td>
+                            <td>{displayStatValue(card, 'atk')}</td>
+                            <td>{displayStatValue(card, 'def')}</td>
                             <td>{card.quantity}</td>
                             <td>${card.tcgPrice}</td>
                             <td>${(card.tcgPrice * card.quantity).toFixed(2)}</td>

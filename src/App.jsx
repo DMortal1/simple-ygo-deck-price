@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { parseYDK } from './utils/api';
 import CardTable from './components/CardTable';
 import CardSearch from './components/CardSearch';
@@ -11,6 +11,20 @@ function App() {
     const [error, setError] = useState(null);
     const [showSearch, setShowSearch] = useState(false);
     const [cardData, setCardData] = useState([]);
+    const [isMobile, setIsMobile] = useState(window.innerWidth <= 768);
+    const [notification, setNotification] = useState({ message: '', isVisible: false });
+
+    // Check for mobile view on resize
+    useEffect(() => {
+        const handleResize = () => {
+            setIsMobile(window.innerWidth <= 768);
+        };
+
+        window.addEventListener('resize', handleResize);
+        return () => {
+            window.removeEventListener('resize', handleResize);
+        };
+    }, []);
 
     const handleFileUpload = (event) => {
         const file = event.target.files[0];
@@ -64,11 +78,90 @@ function App() {
         saveAs(blob, 'deck.ydk');
     };
 
-    const handleAddCard = (cardId) => {
-        setDeck(prevDeck => ({
-            ...prevDeck,
-            mainDeck: [...prevDeck.mainDeck, cardId]
-        }));
+    const handleAddCard = async (cardId, deckType = 'main') => {
+        // Fetch card data for validation if not already in cardData
+        let cardToAdd;
+        if (!cardData.find(card => card.id === cardId)) {
+            try {
+                const response = await fetch(`https://db.ygoprodeck.com/api/v7/cardinfo.php?id=${cardId}`);
+                const data = await response.json();
+                cardToAdd = data.data[0];
+                // Add to cardData state
+                setCardData(prevCardData => [...prevCardData, cardToAdd]);
+            } catch (error) {
+                console.error('Error fetching card data:', error);
+                return; // Don't proceed if card data can't be fetched
+            }
+        } else {
+            cardToAdd = cardData.find(card => card.id === cardId);
+        }
+
+        // Helper function to determine if a card belongs in the extra deck
+        const isExtraDeckCard = (cardType) => {
+            return cardType.includes('Fusion') || 
+                   cardType.includes('Synchro') || 
+                   cardType.includes('Xyz') || 
+                   cardType.includes('Link') || 
+                   (cardType.includes('Pendulum') && (
+                       cardType.includes('Xyz') || 
+                       cardType.includes('Synchro') || 
+                       cardType.includes('Fusion') || 
+                       cardType.includes('Link')
+                   ));
+        };
+
+        // Add the card to the corresponding deck section with validation
+        setDeck(prevDeck => {
+            // Create a copy of the deck to update
+            const updatedDeck = { ...prevDeck };
+            
+            // Add the card to the specified deck section with validation
+            const cardType = cardToAdd.type;
+            
+            switch (deckType) {
+                case 'main':
+                    // Don't add Extra Deck cards to Main Deck
+                    if (!isExtraDeckCard(cardType)) {
+                        updatedDeck.mainDeck = [...updatedDeck.mainDeck, cardId];
+                    } else {
+                        console.warn('Cannot add Extra Deck card to Main Deck');
+                        showNotification(`${cardToAdd.name} can only be added to the Extra Deck`);
+                    }
+                    break;
+                case 'extra':
+                    // Only add Extra Deck cards to Extra Deck
+                    if (isExtraDeckCard(cardType)) {
+                        updatedDeck.extraDeck = [...updatedDeck.extraDeck, cardId];
+                    } else {
+                        console.warn('Cannot add Main Deck card to Extra Deck');
+                        showNotification(`${cardToAdd.name} can only be added to the Main Deck`);
+                    }
+                    break;
+                case 'side':
+                    // Any card can go in Side Deck
+                    updatedDeck.sideDeck = [...updatedDeck.sideDeck, cardId];
+                    break;
+                default:
+                    console.warn('Invalid deck type specified');
+            }
+            
+            return updatedDeck;
+        });
+    };
+
+    const handleViewModeToggle = () => {
+        setViewMode(prevMode => prevMode === 'table' ? 'grid' : 'table');
+    };
+
+    // Get the effective view mode (always grid on mobile)
+    const effectiveViewMode = isMobile ? 'grid' : viewMode;
+
+    // Show notification message
+    const showNotification = (message) => {
+        setNotification({ message, isVisible: true });
+        setTimeout(() => {
+            setNotification({ message: '', isVisible: false });
+        }, 3000);
     };
 
     return (
@@ -76,25 +169,35 @@ function App() {
             <header>
                 <h1>Yu-Gi-Oh! Deck Viewer</h1>
                 <div className="controls">
-                    <input
-                        type="file"
-                        accept=".ydk"
-                        onChange={handleFileUpload}
-                        className="file-input"
-                    />
-                    <button onClick={() => setShowSearch(!showSearch)}>
-                        {showSearch ? 'Hide Search' : 'Show Search'}
-                    </button>
-                    <button onClick={() => setViewMode(viewMode === 'table' ? 'grid' : 'table')}>
-                        Switch to {viewMode === 'table' ? 'Grid' : 'Table'} View
-                    </button>
-                    <button onClick={exportToYDK} disabled={!deck.mainDeck.length}>
-                        Export to YDK
-                    </button>
+                    <div className="file-upload-container">
+                        <input
+                            type="file"
+                            accept=".ydk"
+                            onChange={handleFileUpload}
+                            className="file-input"
+                        />
+                    </div>
+                    <div className="button-container">
+                        <button onClick={() => setShowSearch(!showSearch)}>
+                            {showSearch ? 'Hide Search' : 'Show Search'}
+                        </button>
+                        <button onClick={handleViewModeToggle} disabled={isMobile}>
+                            {isMobile ? 'Grid View' : `Switch to ${viewMode === 'table' ? 'Grid' : 'Table'} View`}
+                        </button>
+                        <button onClick={exportToYDK} disabled={!deck.mainDeck.length}>
+                            Export to YDK
+                        </button>
+                    </div>
                 </div>
             </header>
 
             {error && <div className="error">{error}</div>}
+
+            {notification.isVisible && (
+                <div className="notification">
+                    {notification.message}
+                </div>
+            )}
 
             {showSearch && (
                 <div className="search-container">
@@ -187,7 +290,7 @@ function App() {
                                     return sum + ((card?.ocgPrice || 0) * (card?.quantity || 1));
                                 }, 0).toFixed(2)}</p>
                             </div>
-                            <CardTable deck={deck.mainDeck} viewMode={viewMode} deckType="main" />
+                            <CardTable deck={deck.mainDeck} viewMode={effectiveViewMode} deckType="main" />
                         </div>
 
                         <div className="deck-section" id="extra-deck">
@@ -202,7 +305,7 @@ function App() {
                                     return sum + ((card?.ocgPrice || 0) * (card?.quantity || 1));
                                 }, 0).toFixed(2)}</p>
                             </div>
-                            <CardTable deck={deck.extraDeck} viewMode={viewMode} deckType="extra" />
+                            <CardTable deck={deck.extraDeck} viewMode={effectiveViewMode} deckType="extra" />
                         </div>
 
                         <div className="deck-section" id="side-deck">
@@ -217,7 +320,7 @@ function App() {
                                     return sum + ((card?.ocgPrice || 0) * (card?.quantity || 1));
                                 }, 0).toFixed(2)}</p>
                             </div>
-                            <CardTable deck={deck.sideDeck} viewMode={viewMode} deckType="side" />
+                            <CardTable deck={deck.sideDeck} viewMode={effectiveViewMode} deckType="side" />
                         </div>
                     </>
                 ) : (

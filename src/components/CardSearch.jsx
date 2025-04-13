@@ -49,6 +49,20 @@ const CardSearch = ({ onAddCard }) => {
         }
     };
 
+    // Determine if a card belongs in the extra deck based on its type
+    const isExtraDeckCard = (cardType) => {
+        return cardType.includes('Fusion') || 
+               cardType.includes('Synchro') || 
+               cardType.includes('Xyz') || 
+               cardType.includes('Link') || 
+               (cardType.includes('Pendulum') && (
+                   cardType.includes('Xyz') || 
+                   cardType.includes('Synchro') || 
+                   cardType.includes('Fusion') || 
+                   cardType.includes('Link')
+               ));
+    };
+
     return (
         <div className="card-search">
             <form onSubmit={handleSearch}>
@@ -76,9 +90,30 @@ const CardSearch = ({ onAddCard }) => {
                                 <div className="result-info">
                                     <h3>{card.name}</h3>
                                     <p>{card.type}</p>
-                                    <button onClick={() => onAddCard(card.id)}>
-                                        Add to Deck
-                                    </button>
+                                    <div className="add-buttons">
+                                        {!isExtraDeckCard(card.type) && (
+                                            <button 
+                                                onClick={() => onAddCard(card.id, 'main')}
+                                                className="add-button main"
+                                            >
+                                                Add to Main
+                                            </button>
+                                        )}
+                                        {isExtraDeckCard(card.type) && (
+                                            <button 
+                                                onClick={() => onAddCard(card.id, 'extra')}
+                                                className="add-button extra"
+                                            >
+                                                Add to Extra
+                                            </button>
+                                        )}
+                                        <button 
+                                            onClick={() => onAddCard(card.id, 'side')}
+                                            className="add-button side"
+                                        >
+                                            Add to Side
+                                        </button>
+                                    </div>
                                 </div>
                             </div>
                         ))}
